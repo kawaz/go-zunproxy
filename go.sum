@@ -1,0 +1,4 @@
+github.com/kawaz/go-requestid v0.0.0-20201221060359-7c0dd7ae57a9 h1:Lbf8PhNoGGozBi7cYdADXfkX9zguJDxoaqm48w5Dvts=
+github.com/kawaz/go-requestid v0.0.0-20201221060359-7c0dd7ae57a9/go.mod h1:5A45AModpN8DusmqKJqytwjIpfyFMng2onYHP0r7qCs=
+github.com/kawaz/go-requestid v0.0.0-20201222065628-3590f9fdeed4 h1:kv7jXcPMrfb3KuSfejdpYaslJRYUzgpEAvkSp8yynmg=
+github.com/kawaz/go-requestid v0.0.0-20201222065628-3590f9fdeed4/go.mod h1:5A45AModpN8DusmqKJqytwjIpfyFMng2onYHP0r7qCs=
