@@ -1,4 +1,4 @@
-package zunproxy
+package preventduplicate
 
 import (
 	"io/ioutil"
