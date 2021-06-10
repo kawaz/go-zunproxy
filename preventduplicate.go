@@ -1,4 +1,4 @@
-package preventduplicate
+package zunproxy
 
 import (
 	"bytes"
@@ -10,49 +10,47 @@ import (
 
 // NewDuplicatePreventer 重複する同時リクエストは一つだけバックエンドに流してレスポンスをシェアすることで高速化を図るミドルウェア
 // リクエストの一意性はデフォルトの RequestIDGenerator を利用する
-func NewDuplicatePreventerDefault() func(http.Handler) http.Handler {
+func NewDuplicatePreventerDefault() *DuplicatePreventer {
 	return NewDuplicatePreventer(nil)
 }
 
 // NewDuplicatePreventer 重複する同時リクエストは一つだけバックエンドに流してレスポンスをシェアすることで高速化を図るミドルウェア
 // idgen でリクエストの一意性を調整する
-func NewDuplicatePreventer(idgen *requestid.RequestIDGenerator) func(http.Handler) http.Handler {
-	dp := &duplicatePreventer{
+func NewDuplicatePreventer(idgen *requestid.RequestIDGenerator) *DuplicatePreventer {
+	dp := &DuplicatePreventer{
 		idgen: idgen,
 		dw:    map[requestid.RequestID]*DuplicateWriter{},
 		dwM:   sync.Mutex{},
 	}
-	return dp.middleware()
+	return dp
 }
 
-func (dp *duplicatePreventer) middleware() func(http.Handler) http.Handler {
-	return func(next http.Handler) http.Handler {
-		if dp.idgen == nil {
-			dp.idgen = requestid.NewDefaultRequestIDGeneratorConfig().NewGenerator()
-		}
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			reqID, ok := dp.idgen.GenerateID(r)
-			if !ok {
-				// reqID が取得できなかったリクエストは対象外なので何もせず次のハンドラに投げて終わる
-				next.ServeHTTP(w, r)
-				return
-			}
-			dw, done, first := dp.Register(w, reqID)
-			if first {
-				// 同時リクエストの最初のリクエストが代表して dw を次のハンドラに投げる
-				go func() {
-					defer dw.Done()
-					next.ServeHTTP(dw, r)
-				}()
-			}
-			// 代表リクエストのレスポンスが返ってくるのを待つ
-			<-done
-		})
+func (dp *DuplicatePreventer) Handler(next http.Handler) http.Handler {
+	if dp.idgen == nil {
+		dp.idgen = requestid.NewDefaultRequestIDGeneratorConfig().NewGenerator()
 	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		reqID, ok := dp.idgen.GenerateID(r)
+		if !ok {
+			// reqID が取得できなかったリクエストは対象外なので何もせず次のハンドラに投げて終わる
+			next.ServeHTTP(w, r)
+			return
+		}
+		dw, done, first := dp.Register(w, reqID)
+		if first {
+			// 同時リクエストの最初のリクエストが代表して dw を次のハンドラに投げる
+			go func() {
+				defer dw.Done()
+				next.ServeHTTP(dw, r)
+			}()
+		}
+		// 代表リクエストのレスポンスが返ってくるのを待つ
+		<-done
+	})
 }
 
-// duplicatePreventer is middleware
-type duplicatePreventer struct {
+// DuplicatePreventer is middleware
+type DuplicatePreventer struct {
 	idgen  *requestid.RequestIDGenerator
 	dwSync sync.Map
 	dw     map[requestid.RequestID]*DuplicateWriter
@@ -60,7 +58,7 @@ type duplicatePreventer struct {
 }
 
 // Register http.ResponseWriter, get *DuplicateWriter
-func (dp *duplicatePreventer) Register(w http.ResponseWriter, reqID requestid.RequestID) (dw *DuplicateWriter, done <-chan struct{}, first bool) {
+func (dp *DuplicatePreventer) Register(w http.ResponseWriter, reqID requestid.RequestID) (dw *DuplicateWriter, done <-chan struct{}, first bool) {
 	dw, first = dp.getDuplicateWriter(reqID)
 	doneRW := make(chan struct{})
 	done = doneRW
@@ -70,7 +68,7 @@ func (dp *duplicatePreventer) Register(w http.ResponseWriter, reqID requestid.Re
 	return
 }
 
-func (dp *duplicatePreventer) getDuplicateWriter(reqID requestid.RequestID) (dw *DuplicateWriter, first bool) {
+func (dp *DuplicatePreventer) getDuplicateWriter(reqID requestid.RequestID) (dw *DuplicateWriter, first bool) {
 	dp.dwM.Lock()
 	defer dp.dwM.Unlock()
 	dw, found := dp.dw[reqID]
@@ -91,7 +89,7 @@ func (dp *duplicatePreventer) getDuplicateWriter(reqID requestid.RequestID) (dw 
 
 // DuplicateWriter は複数の *http.ResponseWriter へ一つのレスポンスの内容を複製して書き込みます
 type DuplicateWriter struct {
-	dp              *duplicatePreventer
+	dp              *DuplicatePreventer
 	reqID           requestid.RequestID
 	container       *ResponseContainer
 	writers         []*waitingWriter

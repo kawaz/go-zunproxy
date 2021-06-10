@@ -1,3 +1,6 @@
 .envrc
 /dist
 /.vscode
+
+# vscodeのデバッグ実行をしたときに出来るバイナリ
+__debug_bin
