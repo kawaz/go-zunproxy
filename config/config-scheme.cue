@@ -5,7 +5,7 @@
 //   }
 // }
 
-Port: int | *3000
+Port: int16 | *3000
 Backend: string & =~ "^https?://[a-z0-9_\\.-]+(:[0-9]+)?$"
 
 Memcached: [
