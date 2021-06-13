@@ -35,10 +35,12 @@ type dumpContent struct {
 }
 
 type dumpReq struct {
-	Method string
-	Path   string
-	Query  url.Values
-	Header http.Header
+	Method   string
+	Path     string
+	Query    url.Values
+	RawPath  string
+	RawQuery string
+	Header   http.Header
 }
 type dumpRes struct {
 	Code          int
@@ -64,10 +66,12 @@ func (dh *dumpHandler) Handle(next http.Handler) http.Handler {
 			ID: ulid.MustNew(ulid.Timestamp(tsStart), dh.rng).String(),
 			Ts: tsStart,
 			Request: dumpReq{
-				Method: r.Method,
-				Path:   r.URL.Path,
-				Query:  r.URL.Query(),
-				Header: r.Header.Clone(),
+				Method:   r.Method,
+				Path:     r.URL.Path,
+				Query:    r.URL.Query(),
+				RawPath:  r.URL.RawPath,
+				RawQuery: r.URL.RawQuery,
+				Header:   r.Header.Clone(),
 			},
 		}
 		// Body保存用のWriterを用意
