@@ -1,11 +1,15 @@
-LogLevel: "debug" | *"info" | "warn" | "error" | "critical"
-Port:     int16 | *3000
+// #Middleware: {
+//   Constructor: {
+//     Name: string
+//     Args: [..._]
+//   }
+// }
 
-DB: {
-	Driver:   string | *"mysql" | "postgres" | "sqlite3"
-	Host:     string
-	Port:     uint16 & *3306
-	Username: string
-	Password: string
-	DBName:   string
-}
+Port: int | *3000
+Backend: string & =~ "^https?://[a-z0-9_\\.-]+(:[0-9]+)?$"
+
+Memcached: [
+  string & =~ "^[a-z0-9_\\.-]+:[0-9]+$"
+] | *[]
+
+DumpDir?: string

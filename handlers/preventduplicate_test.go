@@ -1,4 +1,4 @@
-package zunproxy
+package handlers
 
 import (
 	"io/ioutil"
@@ -55,8 +55,8 @@ func TestHandler(t *testing.T) {
 		})
 	}
 	// dpm := NewDuplicatePreventer(nil)
-	dpm := NewDuplicatePreventer(nil)
-	ts := httptest.NewServer(counter(recoverer(dpm.Handler(http.HandlerFunc(app)))))
+	dpm := NewRequestBundler(nil)
+	ts := httptest.NewServer(counter(recoverer(dpm.Handle(http.HandlerFunc(app)))))
 	defer ts.Close()
 
 	var wg sync.WaitGroup

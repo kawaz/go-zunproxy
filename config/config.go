@@ -1,53 +1,42 @@
 package config
 
 import (
-	"database/sql"
+	_ "embed"
 	"fmt"
 	"io"
 	"log"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"cuelang.org/go/cue"
+	cueerrors "cuelang.org/go/cue/errors"
 	"cuelang.org/go/encoding/gocode/gocodec"
 )
 
-type Config struct {
-	LogLevel string
-	Port     uint16
-	DB       struct {
-		Driver   string
-		Host     string
-		Port     uint16
-		Username string
-		Password string
-		DBName   string
-	}
-}
-
-func (c *Config) OpenDB() (*sql.DB, error) {
-	dsn := fmt.Sprintf("%s:%s@tcp(%s:%d)/$%s?",
-		url.PathEscape(c.DB.Username),
-		url.PathEscape(c.DB.Password),
-		url.PathEscape(c.DB.Host),
-		c.DB.Port,
-		url.PathEscape(c.DB.DBName),
-		//config.DB.Options.Encode(),
-	)
-	return sql.Open(c.DB.Driver, dsn)
-}
-
 var r cue.Runtime
+
+//go:embed "config-scheme.cue"
+var configScheme []byte
+
+type Config struct {
+	Port      int
+	Backend   string
+	Memcached []string
+	DumpDir   string
+}
 
 func Load(files ...string) (*Config, error) {
 	var merged *cue.Instance
-	for _, file := range append(files, "config/config-scheme.cue") {
-		log.Printf("Load config: %s", file)
+	scheme, err := r.Compile("github.com/kawaz/go-zunproxy/config/config-scheme.cue", configScheme)
+	if err != nil {
+		return nil, fmt.Errorf("could not parse cue: %v", err)
+	}
+	merged = scheme
+	for _, file := range files {
 		newInstance, err := loadFile(file)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("could not load cue: %v", cueerrors.Details(err, nil))
 		}
 		if merged == nil {
 			merged = newInstance
@@ -61,7 +50,7 @@ func Load(files ...string) (*Config, error) {
 	}
 	c := Config{}
 	codec := gocodec.New(&r, &gocodec.Config{})
-	err := codec.Encode(merged.Value(), &c)
+	err = codec.Encode(merged.Value(), &c)
 	if err != nil {
 		return nil, err
 	}
@@ -93,11 +82,11 @@ func loadCUE(path string, file *os.File) (*cue.Instance, error) {
 }
 
 func loadJSON(path string, reader io.Reader) (*cue.Instance, error) {
-	return nil, fmt.Errorf("Not implement json")
+	return nil, fmt.Errorf("not implement json")
 	//return json.NewDecoderoder(&r, path, reader).Decode()
 }
 
 func loadYAML(path string, file *os.File) (*cue.Instance, error) {
-	return nil, fmt.Errorf("Not implement yaml")
+	return nil, fmt.Errorf("not implement yaml")
 	//yaml.Decode(&r, configPath, file)
 }

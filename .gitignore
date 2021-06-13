@@ -1,3 +1,8 @@
+# テスト実行用のバイナリとコンフィグ
+/zunproxy
+/zunproxy.cue
+/dump
+
 .envrc
 /dist
 /.vscode

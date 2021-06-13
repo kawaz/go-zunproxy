@@ -1,7 +1,7 @@
-package zunproxy
+package handlers
 
 import (
-	"context"
+	"bytes"
 	"crypto/sha256"
 	"encoding/base32"
 	"fmt"
@@ -13,7 +13,6 @@ import (
 
 	"github.com/bradfitz/gomemcache/memcache"
 	"github.com/goccy/go-json"
-	"github.com/k0kubun/pp"
 )
 
 type CacheHandler struct {
@@ -54,9 +53,10 @@ func (ci *CacheInfo) Bytes() []byte {
 }
 
 type CachedResponse struct {
-	Status int
-	Header http.Header
-	Body   []byte
+	Code          int
+	ContentLength int
+	Header        http.Header
+	Body          []byte
 	// 元になった Item を更新用に保持しておく
 	mcItem *memcache.Item
 }
@@ -76,7 +76,7 @@ func NewCacheResponse(item *memcache.Item) (*CachedResponse, error) {
 
 func NewCacheResponseFromRecorder(rr *httptest.ResponseRecorder) *CachedResponse {
 	return &CachedResponse{
-		Status: rr.Code,
+		Code:   rr.Code,
 		Header: rr.Header(),
 		Body:   rr.Body.Bytes(),
 	}
@@ -88,19 +88,54 @@ func (cr *CachedResponse) WriteTo(w http.ResponseWriter) {
 			w.Header().Add(k, v)
 		}
 	}
-	//	w.WriteHeader(cr.Status)
+	w.WriteHeader(cr.Code)
 	w.Write(cr.Body)
 }
 
-func (cr *CachedResponse) Bytes() []byte {
-	bytes, err := json.Marshal(cr)
-	if err != nil {
-		panic(fmt.Errorf("could not marchal CachedResponse: %v", err))
-	}
-	return bytes
+func (cache *CacheHandler) Handle(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ci, err := cache.getCacheInfo(r)
+		if err != nil {
+			// memcached で何かエラー
+			log.Print(err)
+			// 普通にキャッシュなしでスルー
+			next.ServeHTTP(w, r)
+			return
+		}
+		if ci.CachedResponse != nil && time.Now().Before(ci.Expires) {
+			// キャッシュが有効なのですぐ返して終了
+			ci.CachedResponse.WriteTo(w)
+			return
+		}
+		// キャッシュ更新は確定
+		// 失敗しててもやることは変わらないので error は無視
+		_ = cache.updateCacheInfo(ci)
+		// Responseを取り出せるようにしておく
+		buf := bytes.NewBuffer([]byte{})
+		rec := NewResponseRecorder(w, buf)
+		next.ServeHTTP(rec, r)
+		isNew := ci.CachedResponse == nil
+		// キャッシュを保存
+		ci.CachedResponse = &CachedResponse{
+			Code:          rec.Code(),
+			ContentLength: rec.ContentLength(),
+			Header:        rec.Header().Clone(),
+			Body:          buf.Bytes(),
+		}
+		err = cache.updateCacheInfo(ci)
+		if err != nil {
+			log.Fatalf("could not save CacheInfo: %v", err)
+			return
+		}
+		if isNew {
+			log.Printf("CREATE_CACHE: %v", ci.ReqKeySource)
+		} else {
+			log.Printf("UPDATE_CACHE: %v", ci.ReqKeySource)
+		}
+	})
 }
 
-func (cache *CacheHandler) MakeCacheKey(prefix string, key string) string {
+func (cache *CacheHandler) makeCacheKey(prefix string, key string) string {
 	k := prefix + base32.StdEncoding.EncodeToString(sha256.New().Sum([]byte(key)))
 	if 250 < len(k) {
 		return k[:250]
@@ -110,7 +145,7 @@ func (cache *CacheHandler) MakeCacheKey(prefix string, key string) string {
 
 func (cache *CacheHandler) getCacheInfo(r *http.Request) (*CacheInfo, error) {
 	rKeySource := r.Method + " " + r.Host + r.URL.Path + "?" + r.URL.RawQuery
-	rKey := cache.MakeCacheKey("req:", rKeySource)
+	rKey := cache.makeCacheKey("req:", rKeySource)
 	item, err := cache.MemcachedClient.Get(rKey)
 	if err != nil {
 		if err != memcache.ErrCacheMiss {
@@ -133,71 +168,12 @@ func (cache *CacheHandler) getCacheInfo(r *http.Request) (*CacheInfo, error) {
 	return &ci, nil
 }
 
-func (cache *CacheHandler) FrontHandler(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ci, err := cache.getCacheInfo(r)
-		if err != nil {
-			http.Error(w, fmt.Sprintf("cache error: %v", err), http.StatusInternalServerError)
-			return
-		}
-		if time.Now().Before(ci.Expires) {
-			ci.CachedResponse.WriteTo(w)
-			return
-		}
-		// キャッシュ更新は確定なのでリクエストのコンテキストにCacheInfoをセット
-		ctx := context.WithValue(r.Context(), CtxKeyCacheInfo, ci)
-		if ci.CachedResponse != nil {
-			ci.CachedResponse.WriteTo(w)
-			next.ServeHTTP(httptest.NewRecorder(), r.WithContext(ctx))
-		} else {
-			next.ServeHTTP(w, r.WithContext(ctx))
-		}
-	})
-}
-
-func (cache *CacheHandler) SaveHandler(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ci, ok := r.Context().Value(CtxKeyCacheInfo).(*CacheInfo)
-		if !ok {
-			// キャッシュ対象じゃないのでスルー
-			next.ServeHTTP(w, r)
-			return
-		}
-		rec := httptest.NewRecorder()
-		next.ServeHTTP(rec, r)
-		cr := &CachedResponse{
-			Status: rec.Code,
-			Header: rec.Header(),
-			Body:   rec.Body.Bytes(),
-		}
-		cr.WriteTo(w)
-		go cache.update(ci, cr)
-	})
-}
-
-func (cache *CacheHandler) update(ci *CacheInfo, cr *CachedResponse) {
-	isNew := ci.CachedResponse == nil
-	if cr != nil {
-		ci.CachedResponse = cr
-		ci.Expires = time.Now().Add(time.Second * 60)
-	}
-	bytes, err := json.Marshal(ci)
+func (cache *CacheHandler) updateCacheInfo(ci *CacheInfo) error {
+	ci.Expires = time.Now().Add(time.Second * 120)
+	ciBytes, err := json.Marshal(ci)
 	if err != nil {
-		pp.Println("could not marchal CacheInfo", err)
+		return fmt.Errorf("could not marshal CacheInfo: %v", err)
 	}
-	ci.mcItem.Value = bytes
-	//err = cache.MemcachedClient.CompareAndSwap(ci.mcItem)
-	err = cache.MemcachedClient.Set(ci.mcItem)
-	if err != nil {
-		log.Fatalf("could not save to memcached: %v", err)
-	}
-	if isNew {
-		log.Printf("CREATE_CACHE: %v", ci.ReqKeySource)
-	} else {
-		log.Printf("UPDATE_CACHE: %v", ci.ReqKeySource)
-	}
+	ci.mcItem.Value = ciBytes
+	return cache.MemcachedClient.Set(ci.mcItem)
 }
-
-type contextKey string
-
-const CtxKeyCacheInfo contextKey = "CacheInfo"

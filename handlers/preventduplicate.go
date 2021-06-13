@@ -1,4 +1,4 @@
-package zunproxy
+package handlers
 
 import (
 	"bytes"
@@ -8,24 +8,28 @@ import (
 	"github.com/kawaz/go-requestid"
 )
 
-// NewDuplicatePreventer 重複する同時リクエストは一つだけバックエンドに流してレスポンスをシェアすることで高速化を図るミドルウェア
-// リクエストの一意性はデフォルトの RequestIDGenerator を利用する
-func NewDuplicatePreventerDefault() *DuplicatePreventer {
-	return NewDuplicatePreventer(nil)
+type RequestBundler interface {
+	Handle(next http.Handler) http.Handler
 }
 
-// NewDuplicatePreventer 重複する同時リクエストは一つだけバックエンドに流してレスポンスをシェアすることで高速化を図るミドルウェア
+// RequestBundler 重複する同時リクエストは一つだけバックエンドに流してレスポンスをシェアすることで高速化を図るミドルウェア
+// リクエストの一意性はデフォルトの RequestIDGenerator を利用する
+func NewRequestBundlerDefault() *requestBundler {
+	return NewRequestBundler(nil)
+}
+
+// NewRequestBundler 重複する同時リクエストは一つだけバックエンドに流してレスポンスをシェアすることで高速化を図るミドルウェア
 // idgen でリクエストの一意性を調整する
-func NewDuplicatePreventer(idgen *requestid.RequestIDGenerator) *DuplicatePreventer {
-	dp := &DuplicatePreventer{
+func NewRequestBundler(idgen *requestid.RequestIDGenerator) *requestBundler {
+	rb := &requestBundler{
 		idgen: idgen,
 		dw:    map[requestid.RequestID]*DuplicateWriter{},
 		dwM:   sync.Mutex{},
 	}
-	return dp
+	return rb
 }
 
-func (dp *DuplicatePreventer) Handler(next http.Handler) http.Handler {
+func (dp *requestBundler) Handle(next http.Handler) http.Handler {
 	if dp.idgen == nil {
 		dp.idgen = requestid.NewDefaultRequestIDGeneratorConfig().NewGenerator()
 	}
@@ -49,16 +53,15 @@ func (dp *DuplicatePreventer) Handler(next http.Handler) http.Handler {
 	})
 }
 
-// DuplicatePreventer is middleware
-type DuplicatePreventer struct {
-	idgen  *requestid.RequestIDGenerator
-	dwSync sync.Map
-	dw     map[requestid.RequestID]*DuplicateWriter
-	dwM    sync.Mutex
+// requestBundler is middleware
+type requestBundler struct {
+	idgen *requestid.RequestIDGenerator
+	dw    map[requestid.RequestID]*DuplicateWriter
+	dwM   sync.Mutex
 }
 
 // Register http.ResponseWriter, get *DuplicateWriter
-func (dp *DuplicatePreventer) Register(w http.ResponseWriter, reqID requestid.RequestID) (dw *DuplicateWriter, done <-chan struct{}, first bool) {
+func (dp *requestBundler) Register(w http.ResponseWriter, reqID requestid.RequestID) (dw *DuplicateWriter, done <-chan struct{}, first bool) {
 	dw, first = dp.getDuplicateWriter(reqID)
 	doneRW := make(chan struct{})
 	done = doneRW
@@ -68,7 +71,7 @@ func (dp *DuplicatePreventer) Register(w http.ResponseWriter, reqID requestid.Re
 	return
 }
 
-func (dp *DuplicatePreventer) getDuplicateWriter(reqID requestid.RequestID) (dw *DuplicateWriter, first bool) {
+func (dp *requestBundler) getDuplicateWriter(reqID requestid.RequestID) (dw *DuplicateWriter, first bool) {
 	dp.dwM.Lock()
 	defer dp.dwM.Unlock()
 	dw, found := dp.dw[reqID]
@@ -89,7 +92,7 @@ func (dp *DuplicatePreventer) getDuplicateWriter(reqID requestid.RequestID) (dw 
 
 // DuplicateWriter は複数の *http.ResponseWriter へ一つのレスポンスの内容を複製して書き込みます
 type DuplicateWriter struct {
-	dp              *DuplicatePreventer
+	dp              *requestBundler
 	reqID           requestid.RequestID
 	container       *ResponseContainer
 	writers         []*waitingWriter
