@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/goccy/go-json"
+	"github.com/itchyny/timefmt-go"
 	"github.com/oklog/ulid"
 )
 
@@ -58,6 +59,7 @@ func (dh *dumpHandler) Handle(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// リクエストの記録開始
 		tsStart := time.Now()
+		dumpDir := timefmt.Format(tsStart, dh.DumpDir)
 		dump := &dumpContent{
 			ID: ulid.MustNew(ulid.Timestamp(tsStart), dh.rng).String(),
 			Ts: tsStart,
@@ -72,14 +74,8 @@ func (dh *dumpHandler) Handle(next http.Handler) http.Handler {
 		}
 		// Body保存用のWriterを用意
 		var bodyWriter io.Writer
-		bodyFile, err := os.Create(path.Join(dh.DumpDir, dump.ID) + ".body")
-		if err != nil && errors.Is(err, syscall.ENOENT) {
-			// ディレクトリを作成してリトライ
-			err = os.MkdirAll(dh.DumpDir, os.ModePerm)
-			if err == nil {
-				bodyFile, err = os.Create(path.Join(dh.DumpDir, dump.ID) + ".body")
-			}
-		}
+		// ディレクトリを作成してリトライ
+		bodyFile, err := createFile(dumpDir, dump.ID+".body")
 		if err != nil {
 			log.Printf("could not create dump body: %v", err)
 			bodyWriter = io.Discard
@@ -98,7 +94,7 @@ func (dh *dumpHandler) Handle(next http.Handler) http.Handler {
 			Header:        rec.Header().Clone(),
 		}
 		var jsonWriter io.Writer
-		jsonFile, err := os.Create(path.Join(dh.DumpDir, dump.ID) + ".json")
+		jsonFile, err := createFile(dumpDir, dump.ID+".json")
 		if err != nil {
 			log.Printf("could not create dump json: %v", err)
 			jsonWriter = io.Discard
@@ -116,4 +112,16 @@ func (dh *dumpHandler) Handle(next http.Handler) http.Handler {
 			log.Printf("could not write dump json: %v", err)
 		}
 	})
+}
+
+func createFile(dir string, file string) (*os.File, error) {
+	bodyFile, err := os.Create(path.Join(dir, file))
+	if err != nil && errors.Is(err, syscall.ENOENT) {
+
+		err = os.MkdirAll(dir, os.ModePerm)
+		if err == nil {
+			bodyFile, err = os.Create(path.Join(dir, file))
+		}
+	}
+	return bodyFile, err
 }
