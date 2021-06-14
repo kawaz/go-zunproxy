@@ -24,6 +24,7 @@ type Config struct {
 	Backend   string
 	Memcached []string
 	DumpDir   string
+	Bundler   bool
 }
 
 func Load(files ...string) (*Config, error) {

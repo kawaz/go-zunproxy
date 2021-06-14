@@ -23,20 +23,27 @@ func MustValue(v interface{}, err error) interface{} {
 
 func main() {
 
-	log.Println("zunproxy started")
 	log.Printf("cwd: %v", MustValue(os.Getwd()))
 
 	cfg, err := config.Load("zunproxy.cue")
 	if err != nil {
 		panic(err)
 	}
-	pp.Println("load config", cfg)
+	pp.Println(cfg)
 
 	// ミドルウェア
-	middlewares := []handlers.Middleware{
-		handlers.NewDumpHandler(cfg.DumpDir),
-		handlers.NewRequestBundlerDefault(),
-		handlers.NewCacheHandler(memcache.New(cfg.Memcached...)),
+	var middlewares []handlers.Middleware
+	if cfg.DumpDir != "" {
+		dump := handlers.NewDumpHandler(cfg.DumpDir)
+		middlewares = append(middlewares, dump)
+	}
+	if cfg.Bundler {
+		bundler := handlers.NewRequestBundlerDefault()
+		middlewares = append(middlewares, bundler)
+	}
+	if 0 < len(cfg.Memcached) {
+		cache := handlers.NewCacheHandler(memcache.New(cfg.Memcached...))
+		middlewares = append(middlewares, cache)
 	}
 
 	// ハンドラ
@@ -48,5 +55,8 @@ func main() {
 
 	// 起動
 	handler := handlers.MultipleHandler(backendProxy, middlewares...)
-	http.ListenAndServe(fmt.Sprintf(":%d", cfg.Port), handler)
+	http.Handle("/", handler)
+	addr := fmt.Sprintf(":%d", cfg.Port)
+	log.Printf("zunproxy start at %v -> %v", addr, cfg.Backend)
+	http.ListenAndServe(addr, nil)
 }
