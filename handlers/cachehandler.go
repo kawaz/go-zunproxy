@@ -15,6 +15,10 @@ import (
 	"github.com/goccy/go-json"
 )
 
+func NewCacheHandler(mc *memcache.Client) Middleware {
+	return &CacheHandler{MemcachedClient: mc}
+}
+
 type CacheHandler struct {
 	MemcachedClient *memcache.Client
 }

@@ -14,17 +14,11 @@ import (
 	"github.com/oklog/ulid"
 )
 
-type DumpHandler interface {
-	Handle(next http.Handler) http.Handler
-}
-
 type dumpHandler struct {
 	DumpDir      string
 	TruncateSize int
 	rng          io.Reader
 }
-
-var _ DumpHandler = (*dumpHandler)(nil)
 
 type dumpContent struct {
 	ID       string
@@ -49,7 +43,7 @@ type dumpRes struct {
 	Truncated     bool
 }
 
-func NewDumpHandler(dumpDir string) DumpHandler {
+func NewDumpHandler(dumpDir string) Middleware {
 	return &dumpHandler{
 		DumpDir: dumpDir,
 		rng:     rand.New(rand.NewSource(time.Now().UnixNano())),

@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"io"
 	"log"
 	"net/http"
 	"net/http/httputil"
@@ -33,25 +32,21 @@ func main() {
 	}
 	pp.Println("load config", cfg)
 
-	mc := memcache.New(cfg.Memcached...)
-	cache := &handlers.CacheHandler{MemcachedClient: mc}
+	// ミドルウェア
+	middlewares := []handlers.Middleware{
+		handlers.NewDumpHandler(cfg.DumpDir),
+		handlers.NewRequestBundlerDefault(),
+		handlers.NewCacheHandler(memcache.New(cfg.Memcached...)),
+	}
 
+	// ハンドラ
 	backendUrl, err := url.Parse(cfg.Backend)
 	if err != nil {
 		panic(fmt.Errorf("could not parse backend: %v", cfg.Backend))
 	}
 	backendProxy := httputil.NewSingleHostReverseProxy(backendUrl)
 
-	dump := handlers.NewDumpHandler(cfg.DumpDir)
-
-	bundler := handlers.NewRequestBundlerDefault()
-
-	http.Handle("/",
-		dump.Handle(
-			bundler.Handle(
-				cache.Handle(
-					backendProxy))))
-
-	fmt.Fprint(io.Discard, cache, dump, bundler)
-	http.ListenAndServe(fmt.Sprintf(":%d", cfg.Port), nil)
+	// 起動
+	handler := handlers.MultipleHandler(backendProxy, middlewares...)
+	http.ListenAndServe(fmt.Sprintf(":%d", cfg.Port), handler)
 }

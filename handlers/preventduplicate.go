@@ -14,13 +14,13 @@ type RequestBundler interface {
 
 // RequestBundler 重複する同時リクエストは一つだけバックエンドに流してレスポンスをシェアすることで高速化を図るミドルウェア
 // リクエストの一意性はデフォルトの RequestIDGenerator を利用する
-func NewRequestBundlerDefault() *requestBundler {
+func NewRequestBundlerDefault() Middleware {
 	return NewRequestBundler(nil)
 }
 
 // NewRequestBundler 重複する同時リクエストは一つだけバックエンドに流してレスポンスをシェアすることで高速化を図るミドルウェア
 // idgen でリクエストの一意性を調整する
-func NewRequestBundler(idgen *requestid.RequestIDGenerator) *requestBundler {
+func NewRequestBundler(idgen *requestid.RequestIDGenerator) Middleware {
 	rb := &requestBundler{
 		idgen: idgen,
 		dw:    map[requestid.RequestID]*DuplicateWriter{},
