@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"errors"
 	"io"
 	"log"
 	"math/rand"
@@ -8,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"path"
+	"syscall"
 	"time"
 
 	"github.com/goccy/go-json"
@@ -71,6 +73,13 @@ func (dh *dumpHandler) Handle(next http.Handler) http.Handler {
 		// Body保存用のWriterを用意
 		var bodyWriter io.Writer
 		bodyFile, err := os.Create(path.Join(dh.DumpDir, dump.ID) + ".body")
+		if err != nil && errors.Is(err, syscall.ENOENT) {
+			// ディレクトリを作成してリトライ
+			err = os.MkdirAll(dh.DumpDir, os.ModePerm)
+			if err == nil {
+				bodyFile, err = os.Create(path.Join(dh.DumpDir, dump.ID) + ".body")
+			}
+		}
 		if err != nil {
 			log.Printf("could not create dump body: %v", err)
 			bodyWriter = io.Discard
