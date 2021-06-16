@@ -15,7 +15,6 @@ import (
 
 	"github.com/goccy/go-json"
 	"github.com/itchyny/timefmt-go"
-	"github.com/k0kubun/pp"
 	"github.com/oklog/ulid"
 )
 
@@ -88,7 +87,6 @@ func (dh *dumpHandler) Handle(next http.Handler) http.Handler {
 		isTarget := true
 		rec := NewResponseRecorder(w, bodyWriter)
 		rec.AddWriteHeaderListener(func(code int, header http.Header) {
-			pp.Println(header)
 			t := header.Get("Content-Type")
 			if strings.HasPrefix(t, "text/") || strings.HasPrefix(t, "application/json") || strings.HasPrefix(t, "application/javascript") {
 				return
