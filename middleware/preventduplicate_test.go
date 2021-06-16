@@ -1,4 +1,4 @@
-package handlers
+package middleware
 
 import (
 	"io/ioutil"
@@ -65,15 +65,8 @@ func TestHandler(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			resp, err := http.Get(ts.URL)
-			if err != nil {
-				t.Fatal(err)
-			}
-
-			body, err := ioutil.ReadAll(resp.Body)
-			if err != nil {
-				t.Fatal(err)
-			}
+			resp, _ := http.Get(ts.URL)
+			body, _ := ioutil.ReadAll(resp.Body)
 			defer resp.Body.Close()
 
 			// log.Println("got resp:", resp, "len:", len(body), "body:", string(body))
