@@ -40,7 +40,7 @@ func TestHandler(t *testing.T) {
 			atomic.AddUint32(&count, 1)
 			next.ServeHTTP(w, r)
 			atomic.AddUint32(&count, ^uint32(0))
-			log.Println("COUNT:", atomic.LoadUint32(&count))
+			// log.Println("COUNT:", atomic.LoadUint32(&count))
 		})
 	}
 
@@ -76,7 +76,7 @@ func TestHandler(t *testing.T) {
 			}
 			defer resp.Body.Close()
 
-			log.Println("got resp:", resp, "len:", len(body), "body:", string(body))
+			// log.Println("got resp:", resp, "len:", len(body), "body:", string(body))
 
 			if string(body) != string(expectedBody) {
 				t.Error("expecting response body:", string(expectedBody))
@@ -99,11 +99,11 @@ func TestHandler(t *testing.T) {
 	if totalHits > 1 {
 		t.Error("handler was hit more than once. hits:", totalHits)
 	}
-	log.Println("total hits:", totalHits)
+	// log.Println("total hits:", totalHits)
 
 	finalCount := atomic.LoadUint32(&count)
 	if finalCount > 0 {
 		t.Error("queue count was expected to be empty, but count:", finalCount)
 	}
-	log.Println("final count:", finalCount)
+	// log.Println("final count:", finalCount)
 }
