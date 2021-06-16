@@ -9,11 +9,13 @@ import (
 	"net/url"
 	"os"
 	"path"
+	"strings"
 	"syscall"
 	"time"
 
 	"github.com/goccy/go-json"
 	"github.com/itchyny/timefmt-go"
+	"github.com/k0kubun/pp"
 	"github.com/oklog/ulid"
 )
 
@@ -83,9 +85,25 @@ func (dh *dumpHandler) Handle(next http.Handler) http.Handler {
 			bodyWriter = bodyFile
 			defer bodyFile.Close()
 		}
-		// 次の Handler を実行
+		isTarget := true
 		rec := NewResponseRecorder(w, bodyWriter)
+		rec.AddWriteHeaderListener(func(code int, header http.Header) {
+			pp.Println(header)
+			t := header.Get("Content-Type")
+			if strings.HasPrefix(t, "text/") || strings.HasPrefix(t, "application/json") || strings.HasPrefix(t, "application/javascript") {
+				return
+			}
+			// ダンプ対象外
+			isTarget = false
+			bodyFile.Close()
+			os.Remove(bodyFile.Name())
+		})
+		// 次の Handler を実行
 		next.ServeHTTP(rec, r)
+		if !isTarget {
+			// ダンプ対象じゃ無いので何もしない
+			return
+		}
 		// メタ情報を保存
 		dump.Duration = time.Since(dump.Ts.UTC())
 		dump.Response = &dumpRes{
