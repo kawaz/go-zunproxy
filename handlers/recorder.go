@@ -9,13 +9,15 @@ type ResponseRecorder interface {
 	http.ResponseWriter
 	Code() int
 	ContentLength() int
+	AddWriteHeaderListener(func(code int, header http.Header))
 }
 
 type responseRecorder struct {
-	w    http.ResponseWriter
-	bw   io.Writer
-	code int
-	clen int
+	w          http.ResponseWriter
+	bw         io.Writer
+	code       int
+	clen       int
+	listenerWH []func(code int, header http.Header)
 }
 
 var _ ResponseRecorder = (*responseRecorder)(nil)
@@ -41,6 +43,11 @@ func (rec *responseRecorder) Write(p []byte) (n int, err error) {
 }
 
 func (rec *responseRecorder) WriteHeader(code int) {
+	if len(rec.listenerWH) != 0 {
+		for _, listener := range rec.listenerWH {
+			listener(code, rec.Header().Clone())
+		}
+	}
 	rec.code = code
 	rec.w.WriteHeader(code)
 }
@@ -55,4 +62,8 @@ func (rec *responseRecorder) Code() int {
 
 func (rec *responseRecorder) ContentLength() int {
 	return rec.clen
+}
+
+func (rec *responseRecorder) AddWriteHeaderListener(listener func(code int, header http.Header)) {
+	rec.listenerWH = append(rec.listenerWH, listener)
 }
