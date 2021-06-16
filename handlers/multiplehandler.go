@@ -4,10 +4,6 @@ import (
 	"net/http"
 )
 
-type Middleware interface {
-	Handle(http.Handler) http.Handler
-}
-
 func MultipleHandler(h http.Handler, ms ...Middleware) http.Handler {
 	if len(ms) == 0 {
 		return h
