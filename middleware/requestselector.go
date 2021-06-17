@@ -1,7 +1,7 @@
 package middleware
 
 import (
-	"fmt"
+	"regexp"
 	"strings"
 )
 
@@ -50,23 +50,45 @@ func (p presufPattern) Match(s string) bool {
 	return strings.HasPrefix(s, p.pre) && strings.HasSuffix(s, p.suf)
 }
 
-func NewPattern(p string) (Pattern, error) {
+type regexPattern struct {
+	r *regexp.Regexp
+}
+
+func (p regexPattern) Match(s string) bool {
+	return p.r.MatchString(s)
+}
+
+func NewWildCard(p string) Pattern {
 	i := strings.IndexByte(p, '*')
 	if i == -1 {
-		return eqPattern{p}, nil
+		return eqPattern{p}
 	}
 	if p == "*" {
-		return anyPattern, nil
+		return anyPattern
+	}
+	// one or more "*"
+	var pre, suf string
+	if i != 0 {
+		pre = p[0:i]
 	}
 	il := strings.LastIndexByte(p, '*')
-	if i == il {
-		if i == 0 {
-			return suffixPattern{p[i+1:]}, nil
-		}
-		if il == len(p)-1 {
-			return prefixPattern{p[0:i]}, nil
-		}
-		return presufPattern{pre: p[0:i], suf: p[i+1:]}, nil
+	if il != len(p)-1 {
+		suf = p[il+1:]
 	}
-	return nil, fmt.Errorf("not support multiple wildcard pattern: %v", p)
+	if i == il {
+		// only one "*"
+		if pre == "" {
+			return suffixPattern{suf}
+		}
+		if suf == "" {
+			return prefixPattern{pre}
+		}
+		return presufPattern{pre, suf}
+	}
+	ws := regexp.MustCompile(`\*+`).Split(p, 100)
+	for i, w := range ws {
+		ws[i] = regexp.QuoteMeta(w)
+	}
+	r := regexp.MustCompile("^" + strings.Join(ws, "(.*?)") + "$")
+	return regexPattern{r}
 }

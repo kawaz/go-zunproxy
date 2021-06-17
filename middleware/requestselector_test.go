@@ -5,97 +5,96 @@ import (
 	"testing"
 )
 
-func TestNewPattern(t *testing.T) {
+func TestNewWildCard(t *testing.T) {
 	type args struct {
-		p string
-		v []string
+		p  string
+		ss []string
 	}
 	tests := []struct {
 		name     string
 		args     args
 		want     bool
 		wantType reflect.Type
-		wantErr  bool
 	}{
 		{
-			name: "full match",
-			args: args{
-				"/",
-				[]string{"/"},
-			},
+			name:     "eq match",
+			args:     args{"/foo", []string{"/foo"}},
 			want:     true,
 			wantType: reflect.TypeOf(eqPattern{}),
-			wantErr:  false,
 		},
 		{
-			name: "any match",
-			args: args{
-				"*",
-				[]string{"", "/", "hoge", "***", "💩"},
-			},
+			name:     "eq match fail",
+			args:     args{"/foo", []string{"/", "/foo/", "/fooo", "/foo*", ""}},
+			want:     false,
+			wantType: reflect.TypeOf(eqPattern{}),
+		},
+		{
+			name:     "any match",
+			args:     args{"*", []string{"", "/", "hoge", "***", "💩"}},
 			want:     true,
 			wantType: reflect.TypeOf(anyPattern),
-			wantErr:  false,
 		},
 		{
-			name: "prefix match",
-			args: args{
-				"/foo*",
-				[]string{"/foo", "/foo/dsa", "/foooooo", "/foo*"},
-			},
+			name:     "prefix match",
+			args:     args{"/foo*", []string{"/foo", "/foo/", "/foo/bar", "/foooooo"}},
 			want:     true,
 			wantType: reflect.TypeOf(prefixPattern{}),
-			wantErr:  false,
 		},
 		{
-			name: "suffix match",
-			args: args{
-				"*.jpg",
-				[]string{"/foo.jpg", "a.jpg", "b.jpg.jpg", ".jpg"},
-			},
+			name:     "prefix match fail",
+			args:     args{"/foo*", []string{"/", "/fo", "/aaa/foo", "/aaa/foo/", "/aaa/foo/bar", ""}},
+			want:     false,
+			wantType: reflect.TypeOf(prefixPattern{}),
+		},
+		{
+			name:     "suffix match",
+			args:     args{"*.go", []string{".go", "foo.go", "/foo.go", "/foo/bar.go"}},
 			want:     true,
 			wantType: reflect.TypeOf(suffixPattern{}),
-			wantErr:  false,
 		},
 		{
-			name: "prefix/suffix match",
-			args: args{
-				"/images/*.jpg",
-				[]string{"/images/foo.jpg", "/images/thumb/a.jpg", "/images/dsa.jpg"},
-			},
+			name:     "suffix match fail",
+			args:     args{"*.go", []string{".go.jpg", "Xgo", ""}},
+			want:     false,
+			wantType: reflect.TypeOf(suffixPattern{}),
+		},
+		{
+			name:     "prefix and suffix match",
+			args:     args{"/images/*.jpg", []string{"/images/.jpg", "/images/foo.jpg", "/images/thumb/foo.jpg"}},
 			want:     true,
 			wantType: reflect.TypeOf(presufPattern{}),
-			wantErr:  false,
 		},
 		{
-			name: "not support multiple wildcard",
-			args: args{
-				"*/files/*.jpg",
-				[]string{"/user1/files/foo.jpg"},
-			},
+			name:     "prefix and suffix match fail",
+			args:     args{"/images/*.jpg", []string{"/images/foo.png", "/user/images/foo.jpg", ""}},
 			want:     false,
-			wantType: nil,
-			wantErr:  true,
+			wantType: reflect.TypeOf(presufPattern{}),
+		},
+		{
+			name:     "multiple wildcard match",
+			args:     args{"*/img/*.jpg", []string{"/img/foo.jpg", "/img/x/foo.jpg", "/user/img/1.jpg", "/user/img/1/2.jpg"}},
+			want:     true,
+			wantType: reflect.TypeOf(regexPattern{}),
+		},
+		{
+			name:     "multiple wildcard match fail",
+			args:     args{"*/img/*.jpg", []string{"/img/foo.png", "/images/foo.jpg", "/user/img.jpg"}},
+			want:     false,
+			wantType: reflect.TypeOf(regexPattern{}),
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			pattern, err := NewPattern(tt.args.p)
-			if err != nil {
-				if !tt.wantErr {
-					t.Errorf("NewPattern(%v) error = %v, wantErr %v", tt.args.p, err, tt.wantErr)
-				}
-				return
-			}
+			pattern := NewWildCard(tt.args.p)
 			gotType := reflect.TypeOf(pattern)
 			if gotType != tt.wantType {
-				t.Errorf("NewPattern(%v) type = %v, wantType %v", tt.args.p, gotType, tt.wantType)
+				t.Errorf("NewWildCard(%v) type = %v, wantType %v", tt.args.p, gotType, tt.wantType)
 				return
 			}
-			for _, v := range tt.args.v {
-				got := pattern.Match(v)
+			for _, s := range tt.args.ss {
+				got := pattern.Match(s)
 				if !reflect.DeepEqual(got, tt.want) {
-					t.Errorf("NewPattern(%v).Match(%v) = %v, want %v, pattern:%#v", tt.args.p, v, got, tt.want, pattern)
+					t.Errorf("NewWildCard(%v).Match(%v) = %v, want %v, pattern = %#v", tt.args.p, s, got, tt.want, pattern)
 					return
 				}
 			}
