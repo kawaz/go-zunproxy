@@ -12,5 +12,5 @@ Backend: string & =~ "^https?://[a-z0-9_\\.-]+(:[0-9]+)?$"
 DumpDir?: string
 Bundler?: bool
 Memcached?: [
-  string & =~ "^[a-z0-9_\\.-]+:[0-9]+$"
+  ...( string & =~ "^[a-z0-9_\\.-]+:[0-9]+$" )
 ]
