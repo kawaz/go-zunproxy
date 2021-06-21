@@ -9,6 +9,28 @@ type Pattern interface {
 	Match(string) bool
 }
 
+type andPattern []Pattern
+
+func (mp andPattern) Match(s string) bool {
+	for _, p := range mp {
+		if !p.Match(s) {
+			return false
+		}
+	}
+	return true
+}
+
+type orPattern []Pattern
+
+func (mp orPattern) Match(s string) bool {
+	for _, p := range mp {
+		if p.Match(s) {
+			return true
+		}
+	}
+	return false
+}
+
 var anyPattern Pattern = anyPatternT{}
 
 type anyPatternT struct{}
@@ -91,4 +113,19 @@ func NewWildCard(p string) Pattern {
 	}
 	r := regexp.MustCompile("^" + strings.Join(ws, "(.*?)") + "$")
 	return regexPattern{r}
+}
+
+func NewWildCardsAnd(patterns ...string) Pattern {
+	var mp andPattern
+	for _, s := range patterns {
+		mp = append(mp, NewWildCard(s))
+	}
+	return mp
+}
+func NewWildCardsOr(patterns ...string) Pattern {
+	var mp orPattern
+	for _, s := range patterns {
+		mp = append(mp, NewWildCard(s))
+	}
+	return mp
 }
