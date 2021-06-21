@@ -1,22 +1,19 @@
 package middleware
 
 import (
-	"errors"
 	"io"
 	"log"
 	"math/rand"
 	"net/http"
 	"net/url"
-	"os"
-	"path"
-	"strings"
-	"syscall"
 	"time"
 
 	"github.com/goccy/go-json"
 	"github.com/itchyny/timefmt-go"
 	"github.com/oklog/ulid"
 )
+
+var textTypes = NewWildCardsOr("text/*", "application/json*", "application/javascript*")
 
 type dumpHandler struct {
 	DumpDir      string
@@ -53,6 +50,7 @@ func NewDumpHandler(dumpDir string) Middleware {
 		rng:     rand.New(rand.NewSource(time.Now().UnixNano())),
 	}
 }
+
 func (dh *dumpHandler) Handle(next http.Handler) http.Handler {
 	if dh.DumpDir == "" {
 		return next
@@ -73,32 +71,26 @@ func (dh *dumpHandler) Handle(next http.Handler) http.Handler {
 				Header:   r.Header.Clone(),
 			},
 		}
-		// Body保存用のWriterを用意
-		var bodyWriter io.Writer
-		// ディレクトリを作成してリトライ
-		bodyFile, err := createFile(dumpDir, dump.ID+".body")
-		if err != nil {
-			log.Printf("could not create dump body: %v", err)
-			bodyWriter = io.Discard
-		} else {
-			bodyWriter = bodyFile
-			defer bodyFile.Close()
-		}
-		isTarget := true
-		rec := NewResponseRecorder(w, bodyWriter)
+		// Body保存用のファイルのCloser
+		var bodyC io.Closer
+		defer Close(bodyC)
+		rec := NewResponseRecorder(w)
 		rec.AddWriteHeaderListener(func(code int, header http.Header) {
+			// text のみ保存する
 			t := header.Get("Content-Type")
-			if strings.HasPrefix(t, "text/") || strings.HasPrefix(t, "application/json") || strings.HasPrefix(t, "application/javascript") {
+			if !textTypes.Match(t) {
 				return
 			}
-			// ダンプ対象外
-			isTarget = false
-			bodyFile.Close()
-			os.Remove(bodyFile.Name())
+			f, err := CreateFile(dumpDir, dump.ID+".body")
+			if err != nil {
+				log.Printf("could not create dump body: %v", err)
+			}
+			bodyC = f
+			rec.AddWriter(f)
 		})
 		// 次の Handler を実行
 		next.ServeHTTP(rec, r)
-		if !isTarget {
+		if bodyC == nil {
 			// ダンプ対象じゃ無いので何もしない
 			return
 		}
@@ -109,35 +101,20 @@ func (dh *dumpHandler) Handle(next http.Handler) http.Handler {
 			ContentLength: rec.ContentLength(),
 			Header:        rec.Header().Clone(),
 		}
-		var jsonWriter io.Writer
-		jsonFile, err := createFile(dumpDir, dump.ID+".json")
+		jsonFile, err := CreateFile(dumpDir, dump.ID+".json")
 		if err != nil {
 			log.Printf("could not create dump json: %v", err)
-			jsonWriter = io.Discard
-		} else {
-			defer jsonFile.Close()
-			jsonWriter = jsonFile
+			return
 		}
+		defer jsonFile.Close()
 		jsonBytes, err := json.Marshal(dump)
 		if err != nil {
 			log.Printf("could not marshal dump json: %v", err)
 			return
 		}
-		_, err = jsonWriter.Write(jsonBytes)
+		_, err = jsonFile.Write(jsonBytes)
 		if err != nil {
 			log.Printf("could not write dump json: %v", err)
 		}
 	})
-}
-
-func createFile(dir string, file string) (*os.File, error) {
-	bodyFile, err := os.Create(path.Join(dir, file))
-	if err != nil && errors.Is(err, syscall.ENOENT) {
-
-		err = os.MkdirAll(dir, os.ModePerm)
-		if err == nil {
-			bodyFile, err = os.Create(path.Join(dir, file))
-		}
-	}
-	return bodyFile, err
 }
