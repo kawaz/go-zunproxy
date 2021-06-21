@@ -26,9 +26,21 @@ type CacheHandler struct {
 // キャッシュの情報
 type CacheInfo struct {
 	// Request を表す文字列
-	ReqKeySource string
+	KeySource string
+	// memcachedのキー(<250byte)
+	Key string
 	// キャシュの有効期限
 	Expires time.Time
+	// キャッシュエントリが作られた
+	Created time.Time
+	// ボディが更新された
+	Updated time.Time
+	// 更新回数
+	UpCount int
+	// 総処理時間
+	UpDurations time.Duration
+	// ボディのハッシュ b64url(sha256(body))
+	BodyHash string
 	// キャッシュされたレスポンス
 	CachedResponse *CachedResponse
 	// 元になった Item を更新用に保持しておく
@@ -61,6 +73,7 @@ type CachedResponse struct {
 	ContentLength int
 	Header        http.Header
 	Body          []byte
+	Enc           string
 	// 元になった Item を更新用に保持しておく
 	mcItem *memcache.Item
 }
@@ -79,10 +92,15 @@ func NewCacheResponse(item *memcache.Item) (*CachedResponse, error) {
 }
 
 func NewCacheResponseFromRecorder(rr *httptest.ResponseRecorder) *CachedResponse {
+	// select enc := rr.Header().Get("Content-Encoding") {
+	// case "gzip":
+
+	// }
 	return &CachedResponse{
 		Code:   rr.Code,
 		Header: rr.Header(),
 		Body:   rr.Body.Bytes(),
+		Enc:    "",
 	}
 }
 
@@ -112,11 +130,17 @@ func (cache *CacheHandler) Handle(next http.Handler) http.Handler {
 			return
 		}
 		// キャッシュ更新は確定
+		tsStart := time.Now()
+		// 他リクエストが同時にキャッシュ更新するのを避けるためにまずキャッシュのExpiresを伸ばしておく
 		// 失敗しててもやることは変わらないので error は無視
 		_ = cache.updateCacheInfo(ci)
 		// Responseを取り出せるようにしておく
+		rec := NewResponseRecorder(w)
 		buf := bytes.NewBuffer([]byte{})
-		rec := NewResponseRecorder(w, buf)
+		rec.AddWriter(buf)
+		//ついでにハッシュも計算しておく
+		hash := sha256.New()
+		rec.AddWriter(hash)
 		next.ServeHTTP(rec, r)
 		isNew := ci.CachedResponse == nil
 		// キャッシュを保存
@@ -131,16 +155,22 @@ func (cache *CacheHandler) Handle(next http.Handler) http.Handler {
 			log.Fatalf("could not save CacheInfo: %v", err)
 			return
 		}
+		//ログ
+		action := "UPDATE"
 		if isNew {
-			log.Printf("CREATE_CACHE: %v", ci.ReqKeySource)
-		} else {
-			log.Printf("UPDATE_CACHE: %v", ci.ReqKeySource)
+			action = "CREATE"
 		}
+		log.Printf("%v %v %10s %v", action, ci.Key, time.Since(tsStart).Truncate(time.Millisecond), ci.KeySource)
 	})
 }
 
+var b32StdNoPad = base32.StdEncoding.WithPadding(base32.NoPadding)
+
 func (cache *CacheHandler) makeCacheKey(prefix string, key string) string {
-	k := prefix + base32.StdEncoding.EncodeToString(sha256.New().Sum([]byte(key)))
+	hash := sha256.New()
+	hash.Write([]byte(key))
+	sum := hash.Sum(nil)
+	k := prefix + b32StdNoPad.EncodeToString(sum)
 	if 250 < len(k) {
 		return k[:250]
 	}
@@ -149,7 +179,7 @@ func (cache *CacheHandler) makeCacheKey(prefix string, key string) string {
 
 func (cache *CacheHandler) getCacheInfo(r *http.Request) (*CacheInfo, error) {
 	rKeySource := r.Method + " " + r.Host + r.URL.Path + "?" + r.URL.RawQuery
-	rKey := cache.makeCacheKey("req:", rKeySource)
+	rKey := cache.makeCacheKey("ch/", rKeySource)
 	item, err := cache.MemcachedClient.Get(rKey)
 	if err != nil {
 		if err != memcache.ErrCacheMiss {
@@ -165,8 +195,9 @@ func (cache *CacheHandler) getCacheInfo(r *http.Request) (*CacheInfo, error) {
 		}
 	} else {
 		ci = CacheInfo{
-			ReqKeySource: rKeySource,
-			mcItem:       &memcache.Item{Key: rKey},
+			KeySource: rKeySource,
+			Key:       rKey,
+			mcItem:    &memcache.Item{Key: rKey},
 		}
 	}
 	return &ci, nil
