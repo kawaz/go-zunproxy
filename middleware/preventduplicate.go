@@ -87,7 +87,7 @@ func (dp *requestBundler) getDuplicateWriter(reqID requestid.RequestID) (dw *Dup
 		}
 		dp.dw[reqID] = dw
 	}
-	return
+	return dw, first
 }
 
 // DuplicateWriter は複数の *http.ResponseWriter へ一つのレスポンスの内容を複製して書き込みます
