@@ -1,4 +1,5 @@
 # テスト実行用のバイナリとコンフィグ
+/go-zunproxy
 /zunproxy
 /zunproxy.cue
 /dump
