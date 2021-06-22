@@ -3,7 +3,6 @@ package middleware
 import (
 	"bytes"
 	"crypto/sha256"
-	"encoding/base32"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -164,13 +163,11 @@ func (cache *CacheHandler) Handle(next http.Handler) http.Handler {
 	})
 }
 
-var b32StdNoPad = base32.StdEncoding.WithPadding(base32.NoPadding)
-
 func (cache *CacheHandler) makeCacheKey(prefix string, key string) string {
 	hash := sha256.New()
 	hash.Write([]byte(key))
 	sum := hash.Sum(nil)
-	k := prefix + b32StdNoPad.EncodeToString(sum)
+	k := prefix + Base32.EncodeToString(sum)
 	if 250 < len(k) {
 		return k[:250]
 	}
