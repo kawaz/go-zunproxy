@@ -10,8 +10,8 @@ import (
 
 	"github.com/bradfitz/gomemcache/memcache"
 	"github.com/k0kubun/pp"
-	"github.com/kawaz/zunproxy/config"
-	"github.com/kawaz/zunproxy/middleware"
+	"github.com/kawaz/go-zunproxy/config"
+	"github.com/kawaz/go-zunproxy/middleware"
 )
 
 func MustValue(v interface{}, err error) interface{} {
