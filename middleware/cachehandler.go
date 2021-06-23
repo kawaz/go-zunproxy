@@ -159,7 +159,7 @@ func (cache *CacheHandler) Handle(next http.Handler) http.Handler {
 		if isNew {
 			action = "CREATE"
 		}
-		log.Printf("%v %v %10s %v", action, ci.Key, time.Since(tsStart).Truncate(time.Millisecond), ci.KeySource)
+		log.Printf("%v %v %10s %v %v", action, ci.Key, time.Since(tsStart).Truncate(time.Millisecond), ci.CachedResponse.Code, ci.KeySource)
 	})
 }
 
