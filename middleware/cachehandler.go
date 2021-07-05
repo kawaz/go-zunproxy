@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"fmt"
 	"net/http"
@@ -14,12 +15,16 @@ import (
 	"github.com/goccy/go-json"
 )
 
-func NewCacheHandler(mc *memcache.Client) Middleware {
-	return &CacheHandler{MemcachedClient: mc}
+func NewCacheHandler(mc *memcache.Client, ttl int) Middleware {
+	return &CacheHandler{
+		MemcachedClient: mc,
+		TTL:             ttl,
+	}
 }
 
 type CacheHandler struct {
 	MemcachedClient *memcache.Client
+	TTL             int
 }
 
 // キャッシュの情報
@@ -123,43 +128,78 @@ func (cache *CacheHandler) Handle(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
-		if ci.CachedResponse != nil && time.Now().Before(ci.Expires) {
-			// キャッシュが有効なのですぐ返して終了
-			ci.CachedResponse.WriteTo(w)
-			return
+		if ci.CachedResponse != nil {
+			if time.Now().Before(ci.Expires) {
+				// キャッシュが有効なのですぐ返して終了
+				ci.CachedResponse.WriteTo(w)
+				return
+			}
 		}
+
 		// キャッシュ更新は確定
 		tsStart := time.Now()
-		// 他リクエストが同時にキャッシュ更新するのを避けるためにまずキャッシュのExpiresを伸ばしておく
-		// 失敗しててもやることは変わらないので error は無視
-		_ = cache.updateCacheInfo(ci)
-		// Responseを取り出せるようにしておく
-		rec := NewResponseRecorder(w)
-		buf := bytes.NewBuffer([]byte{})
-		rec.AddWriter(buf)
-		//ついでにハッシュも計算しておく
-		hash := sha256.New()
-		rec.AddWriter(hash)
-		next.ServeHTTP(rec, r)
-		isNew := ci.CachedResponse == nil
-		// キャッシュを保存
-		ci.CachedResponse = &CachedResponse{
-			Code:          rec.Code(),
-			ContentLength: rec.ContentLength(),
-			Header:        rec.Header().Clone(),
-			Body:          buf.Bytes(),
+		var isNew bool
+		var rec ResponseRecorder
+		if ci.CachedResponse == nil {
+			isNew = true
+			rec = NewResponseRecorder(w)
+		} else {
+			isNew = false
+			rec = NewResponseSteeler()
 		}
-		err = cache.updateCacheInfo(ci)
-		if err != nil {
-			log.Fatalf("could not save CacheInfo: %v", err)
+
+		// バックエンドにリクエストを投げる
+		newCache := make(chan *CachedResponse, 1)
+		go func() {
+			// 他リクエストが同時にキャッシュ更新するのを避けるためにまずキャッシュのExpiresを伸ばしておく
+			// 失敗しててもやることは変わらないので error は無視
+			_ = cache.updateCacheInfo(ci)
+			// Responseを取り出せるようにしておく
+			buf := bytes.NewBuffer([]byte{})
+			rec.AddWriter(buf)
+			//ついでにハッシュも計算しておく
+			hash := sha256.New()
+			rec.AddWriter(hash)
+			next.ServeHTTP(rec, r.Clone(context.Background()))
+			// キャッシュを保存
+			ci.CachedResponse = &CachedResponse{
+				Code:          rec.Code(),
+				ContentLength: rec.ContentLength(),
+				Header:        rec.Header().Clone(),
+				Body:          buf.Bytes(),
+			}
+			err = cache.updateCacheInfo(ci)
+			if err != nil {
+				log.Fatalf("could not save CacheInfo: %v", err)
+				return
+			}
+			log.Printf("%v %v %10s %v %v", "UPDATE", ci.Key, time.Since(tsStart).Truncate(time.Millisecond), ci.CachedResponse.Code, ci.KeySource)
+			newCache <- ci.CachedResponse
+		}()
+
+		// 新規なら更新リクエストが終わったら戻る
+		if isNew {
+			<-newCache
+			log.Printf("%v %v %10s %v %v", "CREATE", ci.Key, time.Since(tsStart).Truncate(time.Millisecond), ci.CachedResponse.Code, ci.KeySource)
 			return
 		}
-		//ログ
-		action := "UPDATE"
-		if isNew {
-			action = "CREATE"
+
+		// 更新の場合は、1秒以内にバックエンドのレスポンスが帰ってこなければ古いキャッシュを返す
+		oldCache := make(chan *CachedResponse, 1)
+		go func() {
+			time.Sleep(100 * time.Millisecond)
+			oldCache <- ci.CachedResponse
+		}()
+
+		select {
+		case wt := <-oldCache:
+			wt.WriteTo(w)
+			log.Printf("%v %v %10s %v %v", "OLDRES", ci.Key, time.Since(tsStart).Truncate(time.Millisecond), ci.CachedResponse.Code, ci.KeySource)
+			return
+		case wt := <-newCache:
+			wt.WriteTo(w)
+			return
 		}
-		log.Printf("%v %v %10s %v %v", action, ci.Key, time.Since(tsStart).Truncate(time.Millisecond), ci.CachedResponse.Code, ci.KeySource)
 	})
 }
 
@@ -201,7 +241,7 @@ func (cache *CacheHandler) getCacheInfo(r *http.Request) (*CacheInfo, error) {
 }
 
 func (cache *CacheHandler) updateCacheInfo(ci *CacheInfo) error {
-	ci.Expires = time.Now().Add(time.Second * 120)
+	ci.Expires = time.Now().Add(time.Second * time.Duration(cache.TTL))
 	ciBytes, err := json.Marshal(ci)
 	if err != nil {
 		return fmt.Errorf("could not marshal CacheInfo: %v", err)

@@ -23,6 +23,7 @@ type Config struct {
 	Port      int
 	Backend   string
 	Memcached []string
+	CacheTTL  int
 	DumpDir   string
 	Bundler   bool
 }

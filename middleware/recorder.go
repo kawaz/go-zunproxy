@@ -20,6 +20,7 @@ type responseRecorder struct {
 	ws []io.Writer
 	// multiple writer
 	mw         io.Writer
+	header     http.Header
 	code       int
 	clen       int
 	listenerWH []func(code int, header http.Header)
@@ -34,9 +35,20 @@ func NewResponseRecorder(w http.ResponseWriter) ResponseRecorder {
 		ws: []io.Writer{w},
 	}
 }
+func NewResponseSteeler() ResponseRecorder {
+	return &responseRecorder{
+		ws: []io.Writer{},
+	}
+}
 
 func (rec *responseRecorder) Header() http.Header {
-	return rec.w.Header()
+	if rec.w != nil {
+		return rec.w.Header()
+	}
+	if rec.header == nil {
+		rec.header = http.Header{}
+	}
+	return rec.header
 }
 
 func (rec *responseRecorder) WriteHeader(code int) {
@@ -46,7 +58,9 @@ func (rec *responseRecorder) WriteHeader(code int) {
 		}
 	}
 	rec.code = code
-	rec.w.WriteHeader(code)
+	if rec.w != nil {
+		rec.w.WriteHeader(code)
+	}
 	rec.mw = io.MultiWriter(rec.ws...)
 }
 
@@ -72,4 +86,8 @@ func (rec *responseRecorder) AddWriter(w io.Writer) {
 	if w != nil {
 		rec.ws = append(rec.ws, w)
 	}
+}
+
+type responseSteeler struct {
+	responseRecorder
 }

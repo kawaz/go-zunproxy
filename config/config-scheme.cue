@@ -1,3 +1,5 @@
+import "time"
+
 // #Middleware: {
 //   Constructor: {
 //     Name: string
@@ -14,3 +16,4 @@ Bundler?: bool
 Memcached?: [
   ...( string & =~ "^[a-z0-9_\\.-]+:[0-9]+$" )
 ]
+CacheTTL?: time.Duration | *120

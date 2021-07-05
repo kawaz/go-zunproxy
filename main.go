@@ -42,7 +42,7 @@ func main() {
 		middlewares = append(middlewares, bundler)
 	}
 	if 0 < len(cfg.Memcached) {
-		cache := middleware.NewCacheHandler(memcache.New(cfg.Memcached...))
+		cache := middleware.NewCacheHandler(memcache.New(cfg.Memcached...), cfg.CacheTTL)
 		middlewares = append(middlewares, cache)
 	}
 
