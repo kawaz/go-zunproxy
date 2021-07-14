@@ -1,12 +1,15 @@
 package main
 
 import (
+	"encoding/json"
+	"flag"
 	"fmt"
 	"log"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
 	"os"
+	"path"
 
 	"github.com/bradfitz/gomemcache/memcache"
 	"github.com/k0kubun/pp"
@@ -22,10 +25,27 @@ func MustValue(v interface{}, err error) interface{} {
 }
 
 func main() {
+	cfgfile := flag.String("config", "./zunproxy.cue", "config file")
+	flg_version := flag.Bool("v", false, "show version")
+	flg_version_long := flag.Bool("V", false, "show version long")
+	flg_help := flag.Bool("h", false, "show help")
+	flag.Parse()
 
-	log.Printf("cwd: %v", MustValue(os.Getwd()))
-
-	cfg, err := config.Load("zunproxy.cue")
+	if *flg_version {
+		fmt.Println(path.Base(os.Args[0]), build)
+		os.Exit(0)
+	}
+	if *flg_version_long {
+		fmt.Println(path.Base(os.Args[0]), build)
+		json, _ := json.MarshalIndent(build, "", "\t")
+		fmt.Println(string(json))
+		os.Exit(0)
+	}
+	if *flg_help {
+		flag.Usage()
+		os.Exit(0)
+	}
+	cfg, err := config.Load(*cfgfile)
 	if err != nil {
 		panic(err)
 	}
