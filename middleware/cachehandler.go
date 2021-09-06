@@ -38,9 +38,8 @@ type CacheConfig struct {
 }
 
 func NewCacheHandler(config *CacheConfig) Middleware {
-	mc := memcache.New(config.MemcachedServers...)
 	return &CacheHandler{
-		MemcachedClient: mc,
+		MemcachedClient: memcache.New(config.MemcachedServers...),
 		config:          config,
 	}
 }
@@ -56,15 +55,15 @@ type CacheInfo struct {
 	KeySource string
 	// memcachedのキー(<250byte)
 	Key string
-	// キャシュの有効期限
+	// キャシュの有効期限（更新の度に SoftTTL 未来の値で更新される）
 	Expires time.Time
 	// キャッシュエントリが作られた
 	Created time.Time
 	// ボディが更新された
 	Updated time.Time
-	// 更新回数
+	// 更新回数（更新の度に +1 される）
 	UpCount int
-	// 総処理時間
+	// 総処理時間（更新の度にバックエンド処理に掛かった時間を足される）
 	UpDurations time.Duration
 	// ボディのハッシュ b64url(sha256(body))
 	BodyHash string
