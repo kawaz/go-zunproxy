@@ -12,17 +12,17 @@ import (
 
 	"cuelang.org/go/cue"
 	"cuelang.org/go/cue/cuecontext"
+	"github.com/kawaz/go-zunproxy/middleware"
 )
 
 var configScheme []byte
 
 type Config struct {
-	Port      int
-	Backend   string
-	Memcached []string
-	CacheTTL  int
-	DumpDir   string
-	Bundler   bool
+	Port    int
+	Backend string
+	DumpDir string
+	Bundler bool
+	Cache   *middleware.CacheConfig
 }
 
 func Load(files ...string) (*Config, error) {

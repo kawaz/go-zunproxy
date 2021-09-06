@@ -11,7 +11,6 @@ import (
 	"os"
 	"path"
 
-	"github.com/bradfitz/gomemcache/memcache"
 	"github.com/k0kubun/pp"
 	"github.com/kawaz/go-zunproxy/config"
 	"github.com/kawaz/go-zunproxy/middleware"
@@ -61,8 +60,8 @@ func main() {
 		bundler := middleware.NewRequestBundlerDefault()
 		middlewares = append(middlewares, bundler)
 	}
-	if 0 < len(cfg.Memcached) {
-		cache := middleware.NewCacheHandler(memcache.New(cfg.Memcached...), cfg.CacheTTL)
+	if cfg.Cache != nil {
+		cache := middleware.NewCacheHandler(cfg.Cache)
 		middlewares = append(middlewares, cache)
 	}
 
@@ -78,5 +77,5 @@ func main() {
 	http.Handle("/", handler)
 	addr := fmt.Sprintf(":%d", cfg.Port)
 	log.Printf("zunproxy start at %v -> %v", addr, cfg.Backend)
-	http.ListenAndServe(addr, nil)
+	log.Fatal(http.ListenAndServe(addr, nil))
 }

@@ -16,7 +16,7 @@ Bundler?: bool
 Memcached?: [
   ...( string & =~ "^[a-z0-9_\\.-]+:[0-9]+$" )
 ]
-CacheTTL?: time.Duration | *120
+// CacheTTL?: time.Duration | *120
 // Listeners: [#Listener, ...#Listener]
 // Routes: [...#Route]
 // Backends: [string]: #Backend

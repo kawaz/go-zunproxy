@@ -15,16 +15,39 @@ import (
 	"github.com/goccy/go-json"
 )
 
-func NewCacheHandler(mc *memcache.Client, ttl int) Middleware {
+type Configurable interface {
+	Config() interface{}
+}
+
+type CacheMiddleware interface {
+	Middleware
+	Configurable
+}
+
+type CacheConfig struct {
+	// memcached サーバリスト
+	MemcachedServers []string
+	// キャッシュの更新期間
+	SoftTTL time.Duration
+	// キャッシュエントリを削除する期間
+	HardTTL time.Duration
+	// キャッシュ更新時にバックエンドからの最新レスポンスを待つ時間。バックエンドのレスポンスがこれより遅い場合は古いキャッシュを返す。
+	NewResponseWaitLimit time.Duration
+	// バックエンドのレスポンスコードに応じたTTL
+	ErrorTTL map[int]time.Duration
+}
+
+func NewCacheHandler(config *CacheConfig) Middleware {
+	mc := memcache.New(config.MemcachedServers...)
 	return &CacheHandler{
 		MemcachedClient: mc,
-		TTL:             ttl,
+		config:          config,
 	}
 }
 
 type CacheHandler struct {
 	MemcachedClient *memcache.Client
-	TTL             int
+	config          *CacheConfig
 }
 
 // キャッシュの情報
@@ -184,10 +207,10 @@ func (cache *CacheHandler) Handle(next http.Handler) http.Handler {
 			return
 		}
 
-		// 更新の場合は、1秒以内にバックエンドのレスポンスが帰ってこなければ古いキャッシュを返す
+		// 更新の場合は、NewResponseWaitLimit 秒以内にバックエンドのレスポンスが帰ってこなければ古いキャッシュを返す
 		oldCache := make(chan *CachedResponse, 1)
 		go func() {
-			time.Sleep(100 * time.Millisecond)
+			time.Sleep(cache.config.NewResponseWaitLimit)
 			oldCache <- ci.CachedResponse
 		}()
 
@@ -241,7 +264,7 @@ func (cache *CacheHandler) getCacheInfo(r *http.Request) (*CacheInfo, error) {
 }
 
 func (cache *CacheHandler) updateCacheInfo(ci *CacheInfo) error {
-	ci.Expires = time.Now().Add(time.Second * time.Duration(cache.TTL))
+	ci.Expires = time.Now().Add(time.Second * time.Duration(cache.config.SoftTTL))
 	ciBytes, err := json.Marshal(ci)
 	if err != nil {
 		return fmt.Errorf("could not marshal CacheInfo: %v", err)
