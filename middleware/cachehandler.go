@@ -251,6 +251,7 @@ func (cache *CacheHandler) getCacheInfo(r *http.Request) (*CacheInfo, error) {
 
 func (cache *CacheHandler) updateCacheInfo(ci *CacheInfo) error {
 	ci.Expires = time.Now().Add(time.Second * time.Duration(cache.config.SoftTTL))
+	ci.mcItem.Expiration = int32(cache.config.HardTTL.Seconds())
 	ciBytes, err := json.Marshal(ci)
 	if err != nil {
 		return fmt.Errorf("could not marshal CacheInfo: %v", err)
