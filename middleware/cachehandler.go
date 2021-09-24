@@ -73,19 +73,6 @@ type CacheInfo struct {
 	mcItem *memcache.Item
 }
 
-func NewCacheInfo(item *memcache.Item) (*CacheInfo, error) {
-	if item == nil {
-		item = &memcache.Item{}
-	}
-	var ci *CacheInfo
-	err := json.Unmarshal(item.Value, &ci)
-	if err != nil {
-		return nil, fmt.Errorf("could not unmatchal CacheInfo: %v", err)
-	}
-	ci.mcItem = item
-	return ci, nil
-}
-
 func (ci *CacheInfo) Bytes() []byte {
 	bytes, err := json.Marshal(ci)
 	if err != nil {
