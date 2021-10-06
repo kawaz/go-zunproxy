@@ -35,9 +35,15 @@ type CacheConfig struct {
 	NewResponseWaitLimit time.Duration
 	// バックエンドのレスポンスコードに応じたTTL
 	ErrorTTL map[int]time.Duration
+	// キャッシュするレスポンスの最大サイズ
+	BytesLimit int
 }
 
 func NewCacheHandler(config *CacheConfig) Middleware {
+	// レスポンスサイズの最大サイズのデフォルトは 700KB とする（memcachedのItemサイズの制限は1MB）
+	if config.BytesLimit <= 0 {
+		config.BytesLimit = 700_000_000
+	}
 	return &CacheHandler{
 		MemcachedClient: memcache.New(config.MemcachedServers...),
 		config:          config,
@@ -177,12 +183,16 @@ func (cache *CacheHandler) Handle(next http.Handler) http.Handler {
 				Header:        rec.Header().Clone(),
 				Body:          buf.Bytes(),
 			}
-			err = cache.updateCacheInfo(ci)
-			if err != nil {
-				log.Fatalf("could not save CacheInfo: %v", err)
-				return
+			// キャッシュサイズが大きい場合は保存をスキップ
+			if cache.config.BytesLimit <= 0 || ci.CachedResponse.ContentLength <= cache.config.BytesLimit {
+				err = cache.updateCacheInfo(ci)
+				if err != nil {
+					log.Printf("could not save CacheInfo: %v", err)
+				}
+				log.Printf("%v %v %10s %v %v", "UPDATE", ci.Key, time.Since(tsStart).Truncate(time.Millisecond), ci.CachedResponse.Code, ci.KeySource)
+			} else {
+				log.Printf("%v %v %10s %v %v >BytesLimit(%v)", "SKIPBL", ci.Key, time.Since(tsStart).Truncate(time.Millisecond), ci.CachedResponse.Code, ci.KeySource, cache.config.BytesLimit)
 			}
-			log.Printf("%v %v %10s %v %v", "UPDATE", ci.Key, time.Since(tsStart).Truncate(time.Millisecond), ci.CachedResponse.Code, ci.KeySource)
 			newCache <- ci.CachedResponse
 		}()
 
@@ -199,7 +209,6 @@ func (cache *CacheHandler) Handle(next http.Handler) http.Handler {
 			time.Sleep(cache.config.NewResponseWaitLimit)
 			oldCache <- ci.CachedResponse
 		}()
-
 		select {
 		case wt := <-oldCache:
 			wt.WriteTo(w)
