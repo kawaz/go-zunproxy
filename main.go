@@ -49,6 +49,7 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
+	pp.Println(build)
 	pp.Println(cfg)
 
 	// ミドルウェア
