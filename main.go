@@ -57,10 +57,12 @@ func main() {
 		dump := middleware.NewDumpHandler(cfg.DumpDir)
 		middlewares = append(middlewares, dump)
 	}
+	// 同じリクエストの同時処理を1つに制限して結果を共有する
 	if cfg.Bundler {
 		bundler := middleware.NewRequestBundlerDefault()
 		middlewares = append(middlewares, bundler)
 	}
+	// レスポンスキャッシュ
 	if cfg.Cache != nil {
 		cache := middleware.NewCacheHandler(cfg.Cache)
 		middlewares = append(middlewares, cache)
