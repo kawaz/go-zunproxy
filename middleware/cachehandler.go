@@ -176,7 +176,11 @@ func (cache *CacheHandler) Handle(next http.Handler) http.Handler {
 			hash := sha256.New()
 			rec.AddWriter(hash)
 			next.ServeHTTP(rec, r.Clone(context.Background()))
-			// キャッシュを保存
+			// HTTP Status Code をに応じたTTLがあればそれを使う
+			ttl, ok := cache.config.ErrorTTL[rec.Code()]
+			if !ok {
+				ttl = cache.config.SoftTTL
+			}
 			ci.CachedResponse = &CachedResponse{
 				Code:          rec.Code(),
 				ContentLength: rec.ContentLength(),
@@ -185,13 +189,16 @@ func (cache *CacheHandler) Handle(next http.Handler) http.Handler {
 			}
 			// キャッシュサイズが大きい場合は保存をスキップ
 			if cache.config.BytesLimit <= 0 || ci.CachedResponse.ContentLength <= cache.config.BytesLimit {
-				err = cache.updateCacheInfo(ci)
+				ci.Updated = time.Now()
+				ci.UpDurations += time.Since(tsStart)
+				ci.UpCount++
+				err = cache.updateCacheInfoWithTTL(ci, ttl)
 				if err != nil {
 					log.Printf("could not save CacheInfo: %v", err)
 				}
-				log.Printf("%v %v %10s %v %v", "UPDATE", ci.Key, time.Since(tsStart).Truncate(time.Millisecond), ci.CachedResponse.Code, ci.KeySource)
+				log.Printf("%v %v ttl=%-4s %10s %v %v", "UPDATE", ci.Key, ttl, time.Since(tsStart).Truncate(time.Millisecond), ci.CachedResponse.Code, ci.KeySource)
 			} else {
-				log.Printf("%v %v %10s %v %v >BytesLimit(%v)", "SKIPBL", ci.Key, time.Since(tsStart).Truncate(time.Millisecond), ci.CachedResponse.Code, ci.KeySource, cache.config.BytesLimit)
+				log.Printf("%v %v ttl=-    %10s %v %v >BytesLimit(%v)", "SKIPBL", ci.Key, time.Since(tsStart).Truncate(time.Millisecond), ci.CachedResponse.Code, ci.KeySource, cache.config.BytesLimit)
 			}
 			newCache <- ci.CachedResponse
 		}()
@@ -199,7 +206,7 @@ func (cache *CacheHandler) Handle(next http.Handler) http.Handler {
 		// 新規なら更新リクエストが終わったら戻る
 		if isNew {
 			<-newCache
-			log.Printf("%v %v %10s %v %v", "CREATE", ci.Key, time.Since(tsStart).Truncate(time.Millisecond), ci.CachedResponse.Code, ci.KeySource)
+			log.Printf("%v %v ttl=-    %10s %v %v", "CREATE", ci.Key, time.Since(tsStart).Truncate(time.Millisecond), ci.CachedResponse.Code, ci.KeySource)
 			return
 		}
 
@@ -252,6 +259,7 @@ func (cache *CacheHandler) getCacheInfo(r *http.Request) (*CacheInfo, error) {
 		ci = CacheInfo{
 			KeySource: rKeySource,
 			Key:       rKey,
+			Created:   time.Now(),
 			mcItem:    &memcache.Item{Key: rKey},
 		}
 	}
@@ -259,7 +267,11 @@ func (cache *CacheHandler) getCacheInfo(r *http.Request) (*CacheInfo, error) {
 }
 
 func (cache *CacheHandler) updateCacheInfo(ci *CacheInfo) error {
-	ci.Expires = time.Now().Add(cache.config.SoftTTL)
+	return cache.updateCacheInfoWithTTL(ci, cache.config.SoftTTL)
+}
+
+func (cache *CacheHandler) updateCacheInfoWithTTL(ci *CacheInfo, ttl time.Duration) error {
+	ci.Expires = time.Now().Add(ttl)
 	ci.mcItem.Expiration = int32(cache.config.HardTTL.Seconds())
 	ciBytes, err := json.Marshal(ci)
 	if err != nil {
