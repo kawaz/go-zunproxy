@@ -36,11 +36,11 @@ func (rewrite *BrokenRewriteGuardHandler) Handle(next http.Handler) http.Handler
 				var err error
 				switch TE {
 				case "gzip":
-					reader, err = gzip.NewReader(buf)
+					reader, err = gzip.NewReader(bytes.NewBuffer(buf.Bytes()))
 				case "br":
-					reader = brotli.NewReader(buf)
+					reader = brotli.NewReader(bytes.NewBuffer(buf.Bytes()))
 				default:
-					reader = buf
+					reader = bytes.NewBuffer(buf.Bytes())
 				}
 				if err != nil {
 					log.Printf("BrokenRewriteGuardHandler: %v", err)
