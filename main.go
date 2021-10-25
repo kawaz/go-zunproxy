@@ -65,7 +65,8 @@ func main() {
 		cache := middleware.NewCacheHandler(cfg.Cache)
 		middlewares = append(middlewares, cache)
 	}
-
+	// 壊れたレスポンスをエラーにする奴
+	middlewares = append(middlewares, middleware.NewBrokenRewriteGuard())
 	// ハンドラ
 	backendUrl, err := url.Parse(cfg.Backend)
 	if err != nil {
