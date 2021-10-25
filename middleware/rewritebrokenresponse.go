@@ -70,8 +70,8 @@ func (rewrite *BrokenRewriteGuardHandler) Handle(next http.Handler) http.Handler
 				code = http.StatusInternalServerError
 			}
 		}
-		// 得したレスポンスを書き出す
-		if TE != "" {
+		// 取得したレスポンスを書き出す
+		if TE == "" {
 			rec.Header().Del("Content-Encoding")
 		}
 		rec.Header().Set("Content-Length", strconv.Itoa(buf.Len()))
