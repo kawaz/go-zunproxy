@@ -60,7 +60,7 @@ func (rewrite *BrokenRewriteGuardHandler) Handle(next http.Handler) http.Handler
 				// 	broken = true
 				// 	log.Printf("ERROR BrokenRewriteGuardHandler: found \\uFFFD: %v", r.URL)
 				// }
-				log.Printf("TE=%v plain=%v, buflen=%v, plainlen=%v, broken=%v", TE, string(plain), buf.Len(), len(plain), broken)
+				// log.Printf("TE=%v plain=%v, buflen=%v, plainlen=%v, broken=%v", TE, string(plain), buf.Len(), len(plain), broken)
 			}
 			if broken {
 				buf.Reset()
