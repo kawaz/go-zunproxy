@@ -28,10 +28,10 @@ func (rewrite *BrokenRewriteGuardHandler) Handle(next http.Handler) http.Handler
 		rec.AddWriter(buf)
 		next.ServeHTTP(rec, r)
 		code := rec.Code()
-		TE := rec.Header().Get("Transfer-Encoding")
 		broken := false
 		if code == http.StatusOK {
 			if strings.HasPrefix(rec.Header().Get("Content-Type"), "text/html") {
+				TE := rec.Header().Get("Transfer-Encoding")
 				var reader io.Reader
 				var err error
 				switch TE {
@@ -61,20 +61,16 @@ func (rewrite *BrokenRewriteGuardHandler) Handle(next http.Handler) http.Handler
 				// 	log.Printf("ERROR BrokenRewriteGuardHandler: found \\uFFFD: %v", r.URL)
 				// }
 				// log.Printf("TE=%v plain=%v, buflen=%v, plainlen=%v, broken=%v", TE, string(plain), buf.Len(), len(plain), broken)
-			}
-			if broken {
-				buf.Reset()
-				TE = ""
-				reloadHTML := `<!DOCTYPE html><html><head><meta charset="utf-8"><script>setTimeout(function(){location.reload()}, 5000)</script></head><body>Server Error. Reload after 5 seconds...</body></html>\n`
-				buf.WriteString(reloadHTML)
-				code = http.StatusInternalServerError
+				if broken {
+					code = http.StatusInternalServerError
+					reloadHTML := `<!DOCTYPE html><html><head><meta charset="utf-8"><script>setTimeout(function(){location.reload()}, 5000)</script></head><body>Server Error. Reload after 5 seconds...</body></html>\n`
+					buf.Reset()
+					buf.WriteString(reloadHTML)
+					rec.Header().Set("Content-Length", strconv.Itoa(buf.Len()))
+					rec.Header().Set("Transfer-Encoding", "identity")
+				}
 			}
 		}
-		// 取得したレスポンスを書き出す
-		if TE == "" {
-			rec.Header().Del("Content-Encoding")
-		}
-		rec.Header().Set("Content-Length", strconv.Itoa(buf.Len()))
 		for k, values := range rec.Header() {
 			for _, v := range values {
 				w.Header().Add(k, v)
