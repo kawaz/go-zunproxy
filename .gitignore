@@ -3,6 +3,7 @@
 /zunproxy
 /zunproxy.cue
 /dump
+/pprof.*
 
 .envrc
 /dist
