@@ -187,8 +187,8 @@ func (cache *CacheHandler) Handle(next http.Handler) http.Handler {
 				Header:        rec.Header().Clone(),
 				Body:          buf.Bytes(),
 			}
-			// キャッシュサイズが大きい場合は保存をスキップ
 			if cache.config.BytesLimit <= 0 || ci.CachedResponse.ContentLength <= cache.config.BytesLimit {
+				// レスポンスサイズ問題なし
 				ci.Updated = time.Now()
 				ci.UpDurations += time.Since(tsStart)
 				ci.UpCount++
@@ -198,7 +198,12 @@ func (cache *CacheHandler) Handle(next http.Handler) http.Handler {
 				}
 				log.Printf("%v %v ttl=%-4s %10s %v %v", "UPDATE", ci.Key, ttl, time.Since(tsStart).Truncate(time.Millisecond), ci.CachedResponse.Code, ci.KeySource)
 			} else {
-				log.Printf("%v %v ttl=-    %10s %v %v >BytesLimit(%v)", "SKIPBL", ci.Key, time.Since(tsStart).Truncate(time.Millisecond), ci.CachedResponse.Code, ci.KeySource, cache.config.BytesLimit)
+				// キャッシュサイズが大きい場合はキャッシュを削除
+				cache.MemcachedClient.Delete(ci.mcItem.Key)
+				if err != nil {
+					log.Printf("could not delete CacheInfo: %v", err)
+				}
+				log.Printf("%v %v ttl=-    %10s %v %v >BytesLimit(%v)", "DELBTLM", ci.Key, time.Since(tsStart).Truncate(time.Millisecond), ci.CachedResponse.Code, ci.KeySource, cache.config.BytesLimit)
 			}
 			newCache <- ci.CachedResponse
 		}()
